@@ -2,7 +2,6 @@ import json
 import requests
 import streamlit as st
 
-
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
@@ -10,7 +9,7 @@ def call_openrouter(prompt, system_message):
     api_key = st.secrets.get("OPENROUTER_API_KEY", None)
 
     if not api_key:
-        return None, "OpenRouter API key is missing. Please add OPENROUTER_API_KEY to Streamlit Secrets."
+        return None, "OpenRouter API key is missing."
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -22,16 +21,10 @@ def call_openrouter(prompt, system_message):
     payload = {
         "model": "openai/gpt-4o-mini",
         "messages": [
-            {
-                "role": "system",
-                "content": system_message
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": prompt}
         ],
-        "temperature": 0.2
+        "temperature": 0.25
     }
 
     try:
@@ -59,7 +52,7 @@ Extract meeting planning information from the user's message.
 User message:
 {user_message}
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON:
 {{
   "meeting_title": "",
   "participant_name": "",
@@ -72,85 +65,49 @@ Return ONLY valid JSON with this exact structure:
 }}
 
 Rules:
-- Understand both Turkish and English.
-- If the user does not provide a field, use an empty string.
-- Date must be YYYY-MM-DD if possible.
-- Times must be HH:MM if possible.
-- If only a start time is given and no duration is clear, use 30 minutes and calculate end_time.
-- If the user says "yarın", "bugün", "next Monday", or similar relative expressions, infer the most likely date based on context if possible.
-- If the date is ambiguous, leave date empty.
-- Do not add markdown.
-- Do not wrap JSON in code fences.
-- Return only valid JSON.
+- Understand Turkish and English.
+- Date format must be YYYY-MM-DD.
+- Time format must be HH:MM.
+- If only start_time is given, set end_time by adding 30 minutes.
+- If date is missing or ambiguous, leave date empty.
+- Return only JSON, no markdown.
 """
 
     result, error = call_openrouter(
         prompt,
-        "You extract structured meeting data from Turkish or English scheduling instructions. You return only valid JSON."
+        "You extract structured meeting data from Turkish or English scheduling instructions. Return only valid JSON."
     )
 
     if error:
         return None, error
 
+    cleaned = result.strip().replace("```json", "").replace("```", "").strip()
+
     try:
-        return json.loads(result), None
+        return json.loads(cleaned), None
     except Exception:
-        cleaned = result.strip()
-
-        if cleaned.startswith("```json"):
-            cleaned = cleaned.replace("```json", "").replace("```", "").strip()
-        elif cleaned.startswith("```"):
-            cleaned = cleaned.replace("```", "").strip()
-
-        try:
-            return json.loads(cleaned), None
-        except Exception:
-            return None, f"AI could not return valid JSON. Raw response: {result}"
+        return None, f"AI could not return valid JSON. Raw response: {result}"
 
 
-def generate_meeting_email(meeting_title, date, start_time, end_time, participant_name="", meeting_link="", google_meet_note="Coming Soon"):
-    prompt = f"""
-Write a concise, professional meeting confirmation email in English.
-
-Meeting title:
-{meeting_title}
-
-Participant name:
-{participant_name}
-
-Date:
-{date}
-
-Time:
-{start_time} - {end_time}
-
-Meeting availability / confirmation link:
-{meeting_link}
-
-Google Meet:
-{google_meet_note}
-
-Tone:
-Professional, warm, suitable for academic, research, or EU project collaboration.
-
-Output:
-Only the email body. Do not include subject line.
+def generate_invitation_email(
+    meeting_title,
+    meeting_link,
+    meeting_code,
+    participant_name="",
+    date="",
+    start_time="",
+    end_time=""
+):
+    date_line = ""
+    if date and start_time and end_time:
+        date_line = f"""
+Proposed organizer availability:
+Date: {date}
+Time: {start_time} - {end_time}
 """
 
-    result, error = call_openrouter(
-        prompt,
-        "You are a professional email assistant for academic and EU project collaboration meetings."
-    )
-
-    if error:
-        return error
-
-    return result
-
-
-def generate_invitation_email(meeting_title, meeting_link, meeting_code, participant_name=""):
     prompt = f"""
-Write a concise, professional meeting availability invitation email in English.
+Write a concise, professional meeting availability invitation email.
 
 Meeting title:
 {meeting_title}
@@ -164,22 +121,62 @@ Meeting link:
 Meeting code:
 {meeting_code}
 
-Purpose:
-Ask the recipient to add their availability using the link.
+{date_line}
 
-Tone:
-Professional, warm, suitable for academic, research, startup, or EU project collaboration.
-
-Output:
-Only the email body. Do not include subject line.
+Important:
+- Mention the proposed date/time if provided.
+- Ask the recipient to add their availability using the link.
+- Keep it warm, professional and suitable for academic / EU project collaboration.
+- Output only email body.
 """
 
     result, error = call_openrouter(
         prompt,
-        "You are a professional email assistant for scheduling research and project collaboration meetings."
+        "You write professional scheduling emails for research and EU project collaboration."
     )
 
-    if error:
-        return error
+    return error if error else result
 
-    return result
+
+def generate_meeting_email(
+    meeting_title,
+    date,
+    start_time,
+    end_time,
+    participant_name="",
+    meeting_link="",
+    google_meet_note="Coming Soon"
+):
+    prompt = f"""
+Write a concise professional meeting confirmation email.
+
+Meeting title:
+{meeting_title}
+
+Participant:
+{participant_name}
+
+Confirmed date:
+{date}
+
+Confirmed time:
+{start_time} - {end_time}
+
+Meeting link:
+{meeting_link}
+
+Google Meet:
+{google_meet_note}
+
+Important:
+- Clearly state the confirmed date and time.
+- Mention that Google Meet connection is coming soon if no Meet link exists.
+- Output only email body.
+"""
+
+    result, error = call_openrouter(
+        prompt,
+        "You write professional meeting confirmation emails."
+    )
+
+    return error if error else result
