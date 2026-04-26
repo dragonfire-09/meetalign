@@ -1,152 +1,185 @@
-import os
 import json
-
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
+import requests
+import streamlit as st
 
 
-def get_client():
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def call_openrouter(prompt, system_message):
+    api_key = st.secrets.get("OPENROUTER_API_KEY", None)
+
     if not api_key:
-        try:
-            import streamlit as st
-            api_key = st.secrets.get("OPENROUTER_API_KEY", "")
-        except Exception:
-            pass
-    return api_key
+        return None, "OpenRouter API key is missing. Please add OPENROUTER_API_KEY to Streamlit Secrets."
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://meetalign.streamlit.app",
+        "X-Title": "MeetAlign"
+    }
+
+    payload = {
+        "model": "openai/gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": system_message
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2
+    }
+
+    try:
+        response = requests.post(
+            OPENROUTER_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return None, f"OpenRouter error: {response.status_code} - {response.text}"
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"], None
+
+    except Exception as e:
+        return None, f"AI request failed: {e}"
 
 
 def parse_meeting_command(user_message):
-    api_key = get_client()
-
-    if not api_key:
-        return None, "OPENROUTER_API_KEY is not set in environment or Streamlit Secrets."
-
-    if not OPENAI_AVAILABLE:
-        return None, "openai library is not installed. Add 'openai' to requirements.txt."
-
-    openai.api_key = api_key
-    openai.api_base = "https://openrouter.ai/api/v1"
-
     prompt = f"""
-You are a meeting scheduling assistant. Parse the user's message and extract:
-- meeting_title (string)
-- participant_name (string)
-- date (YYYY-MM-DD format)
-- start_time (HH:MM format, 24h)
-- end_time (HH:MM format, 24h, if not given leave empty)
+Extract meeting planning information from the user's message.
 
-Return ONLY valid JSON, no explanation, no markdown.
+User message:
+{user_message}
 
-Example output:
-{{"meeting_title": "EIC Pathfinder Meeting", "participant_name": "Moshira", "date": "2026-05-12", "start_time": "14:00", "end_time": ""}}
+Return ONLY valid JSON with this exact structure:
+{{
+  "meeting_title": "",
+  "participant_name": "",
+  "participant_email": "",
+  "date": "",
+  "start_time": "",
+  "end_time": "",
+  "duration_minutes": 30,
+  "notes": ""
+}}
 
-User message: {user_message}
+Rules:
+- Understand both Turkish and English.
+- If the user does not provide a field, use an empty string.
+- Date must be YYYY-MM-DD if possible.
+- Times must be HH:MM if possible.
+- If only a start time is given and no duration is clear, use 30 minutes and calculate end_time.
+- If the user says "yarın", "bugün", "next Monday", or similar relative expressions, infer the most likely date based on context if possible.
+- If the date is ambiguous, leave date empty.
+- Do not add markdown.
+- Do not wrap JSON in code fences.
+- Return only valid JSON.
 """
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="openai/gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a helpful meeting scheduling assistant. Return only JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=300,
-            temperature=0.2
-        )
-
-        content = response["choices"][0]["message"]["content"].strip()
-
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-            content = content.strip()
-
-        parsed = json.loads(content)
-        return parsed, None
-
-    except json.JSONDecodeError as e:
-        return None, f"AI returned invalid JSON: {e}"
-    except Exception as e:
-        return None, f"OpenRouter API error: {e}"
-
-
-def generate_meeting_email(meeting_title, matches, language="English"):
-    api_key = get_client()
-
-    if not api_key or not OPENAI_AVAILABLE:
-        lines = [f"Meeting: {meeting_title}\n\nMatching slots:"]
-        for m in matches:
-            lines.append(f"- {m.get('Date', '')} | {m.get('Start', '')} - {m.get('End', '')}")
-        lines.append("\nPlease confirm your preferred time slot.\n\nBest regards,\nMeetAlign")
-        return "\n".join(lines)
-
-    openai.api_key = api_key
-    openai.api_base = "https://openrouter.ai/api/v1"
-
-    match_text = "\n".join(
-        [f"- Date: {m.get('Date','')}, From: {m.get('Start','')}, Until: {m.get('End','')}"
-         for m in matches]
+    result, error = call_openrouter(
+        prompt,
+        "You extract structured meeting data from Turkish or English scheduling instructions. You return only valid JSON."
     )
 
-    if language == "Türkçe":
-        prompt = f"""Profesyonel bir toplantı davet e-postası oluştur.
-Toplantı: {meeting_title}
-Eşleşen saatler:
-{match_text}
-
-Katılımcılardan tercih ettikleri saati onaylamalarını iste. Kibar ve profesyonel ol."""
-    else:
-        prompt = f"""Generate a professional meeting invitation email.
-Meeting: {meeting_title}
-Matching slots:
-{match_text}
-
-Ask participants to confirm their preferred slot. Be polite and professional."""
+    if error:
+        return None, error
 
     try:
-        response = openai.ChatCompletion.create(
-            model="openai/gpt-4o",
-            messages=[
-                {"role": "system", "content": "You write professional meeting emails."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=400,
-            temperature=0.7
-        )
-        return response["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error generating email: {e}"
+        return json.loads(result), None
+    except Exception:
+        cleaned = result.strip()
+
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+        elif cleaned.startswith("```"):
+            cleaned = cleaned.replace("```", "").strip()
+
+        try:
+            return json.loads(cleaned), None
+        except Exception:
+            return None, f"AI could not return valid JSON. Raw response: {result}"
 
 
-def ai_chatbot_response(message, language="English"):
-    api_key = get_client()
+def generate_meeting_email(meeting_title, date, start_time, end_time, participant_name="", meeting_link="", google_meet_note="Coming Soon"):
+    prompt = f"""
+Write a concise, professional meeting confirmation email in English.
 
-    if not api_key or not OPENAI_AVAILABLE:
-        return "AI is not available. Please check OPENROUTER_API_KEY."
+Meeting title:
+{meeting_title}
 
-    openai.api_key = api_key
-    openai.api_base = "https://openrouter.ai/api/v1"
+Participant name:
+{participant_name}
 
-    if language == "Türkçe":
-        sys_msg = "Sen toplantı planlama konusunda yardımcı olan dostça bir asistansın. Türkçe yanıt ver."
-    else:
-        sys_msg = "You are a friendly assistant that helps with meeting scheduling."
+Date:
+{date}
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="openai/gpt-4o",
-            messages=[
-                {"role": "system", "content": sys_msg},
-                {"role": "user", "content": message}
-            ],
-            max_tokens=300,
-            temperature=0.7
-        )
-        return response["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"Error: {e}"
+Time:
+{start_time} - {end_time}
+
+Meeting availability / confirmation link:
+{meeting_link}
+
+Google Meet:
+{google_meet_note}
+
+Tone:
+Professional, warm, suitable for academic, research, or EU project collaboration.
+
+Output:
+Only the email body. Do not include subject line.
+"""
+
+    result, error = call_openrouter(
+        prompt,
+        "You are a professional email assistant for academic and EU project collaboration meetings."
+    )
+
+    if error:
+        return error
+
+    return result
+
+
+def generate_invitation_email(meeting_title, meeting_link, meeting_code, participant_name=""):
+    prompt = f"""
+Write a concise, professional meeting availability invitation email in English.
+
+Meeting title:
+{meeting_title}
+
+Participant name:
+{participant_name}
+
+Meeting link:
+{meeting_link}
+
+Meeting code:
+{meeting_code}
+
+Purpose:
+Ask the recipient to add their availability using the link.
+
+Tone:
+Professional, warm, suitable for academic, research, startup, or EU project collaboration.
+
+Output:
+Only the email body. Do not include subject line.
+"""
+
+    result, error = call_openrouter(
+        prompt,
+        "You are a professional email assistant for scheduling research and project collaboration meetings."
+    )
+
+    if error:
+        return error
+
+    return result
