@@ -688,11 +688,16 @@ elif menu == t["availability"]:
             matches = calc_matches(edf, t["organizer"], t["participant"])
             if matches:
                 st.markdown(f'<div class="section-head">✅ {t["matches"]} ({len(matches)})</div>', unsafe_allow_html=True)
-                for m in matches:
+                for m_item in matches:
+                    m_start = m_item["Start"]
+                    m_end = m_item["End"]
+                    m_date = m_item["Date"]
+                    m_org = m_item["Organizer"]
+                    m_part = m_item["Participant"]
                     st.markdown(
-                        f'{pill_html(m["Date"],"pill-green")} '
-                        f'{pill_html(f"{m[\"Start\"]}-{m[\"End\"]}","pill-green")} '
-                        f'{m["Organizer"]} ↔ {m["Participant"]}',
+                        f'{pill_html(m_date,"pill-green")} '
+                        f'{pill_html(f"{m_start}-{m_end}","pill-green")} '
+                        f'{m_org} ↔ {m_part}',
                         unsafe_allow_html=True
                     )
             else:
