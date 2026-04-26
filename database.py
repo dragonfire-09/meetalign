@@ -2,7 +2,7 @@ import sqlite3
 import uuid
 from datetime import datetime
 
-DB_NAME = "meetalign.db"
+DB_NAME = "meetalign_v2.db"
 
 
 def get_connection():
@@ -68,6 +68,7 @@ def get_meeting(meeting_code):
 
     row = cur.fetchone()
     conn.close()
+
     return row
 
 
@@ -105,4 +106,5 @@ def get_availability(meeting_code):
 
     rows = cur.fetchall()
     conn.close()
+
     return rows
