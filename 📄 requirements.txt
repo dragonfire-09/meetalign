@@ -1,3 +1,5 @@
 streamlit
 pandas
-requests
+openai
+sqlite3  # Python standart kütüphanesinde, requirements’a eklemeseniz de olur
+ics      # Takvim export (.ics) oluşturmak için eğer kullanıyorsanız
