@@ -38,17 +38,14 @@ def init_db():
     )
     """)
 
-    # Migration support for old database
     existing_columns = [
         row[1] for row in cur.execute("PRAGMA table_info(meetings)").fetchall()
     ]
 
     if "status" not in existing_columns:
         cur.execute("ALTER TABLE meetings ADD COLUMN status TEXT DEFAULT 'active'")
-
     if "archived_at" not in existing_columns:
         cur.execute("ALTER TABLE meetings ADD COLUMN archived_at TEXT")
-
     if "cancel_reason" not in existing_columns:
         cur.execute("ALTER TABLE meetings ADD COLUMN cancel_reason TEXT")
 
@@ -59,22 +56,15 @@ def init_db():
 def create_meeting(title):
     conn = get_connection()
     cur = conn.cursor()
-
     meeting_code = str(uuid.uuid4())[:8].upper()
 
     cur.execute("""
     INSERT INTO meetings (meeting_code, title, created_at, status)
     VALUES (?, ?, ?, ?)
-    """, (
-        meeting_code,
-        title,
-        datetime.now().isoformat(),
-        "active"
-    ))
+    """, (meeting_code, title, datetime.now().isoformat(), "active"))
 
     conn.commit()
     conn.close()
-
     return meeting_code
 
 
@@ -90,7 +80,6 @@ def get_meeting(meeting_code):
 
     row = cur.fetchone()
     conn.close()
-
     return row
 
 
@@ -104,11 +93,7 @@ def cancel_meeting(meeting_code, reason=""):
         archived_at = ?,
         cancel_reason = ?
     WHERE meeting_code = ?
-    """, (
-        datetime.now().isoformat(),
-        reason,
-        meeting_code
-    ))
+    """, (datetime.now().isoformat(), reason, meeting_code))
 
     conn.commit()
     conn.close()
@@ -143,11 +128,15 @@ def get_archived_meetings():
 
     rows = cur.fetchall()
     conn.close()
-
     return rows
 
 
 def add_availability(meeting_code, name, email, role, date, start_time, end_time):
+    meeting = get_meeting(meeting_code)
+
+    if meeting and meeting[3] == "cancelled":
+        raise ValueError("This meeting is cancelled and archived.")
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -181,5 +170,4 @@ def get_availability(meeting_code):
 
     rows = cur.fetchall()
     conn.close()
-
     return rows
