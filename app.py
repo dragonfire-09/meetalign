@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from database import init_db, add_availability, get_availability
+from ai_assistant import generate_meeting_email
 
 init_db()
 
@@ -15,7 +16,12 @@ st.caption("Smart meeting availability tool for project teams")
 
 menu = st.sidebar.radio(
     "Menu",
-    ["Create Meeting", "Add Availability", "View Matches"]
+    [
+        "Create Meeting",
+        "Add Availability",
+        "View Matches",
+        "AI Email Assistant"
+    ]
 )
 
 if menu == "Create Meeting":
@@ -36,8 +42,13 @@ if menu == "Create Meeting":
         if meeting_title:
             st.success("Meeting created successfully.")
             st.info(f"Share this Meeting ID: {meeting_id}")
+            st.write("Example message:")
+            st.code(
+                f"Please add your availability for our meeting using Meeting ID: {meeting_id}"
+            )
         else:
             st.warning("Please enter a meeting title.")
+
 
 elif menu == "Add Availability":
     st.header("Add Availability")
@@ -72,6 +83,7 @@ elif menu == "Add Availability":
                 end_time
             )
             st.success("Availability saved successfully.")
+
 
 elif menu == "View Matches":
     st.header("View Matches")
@@ -136,6 +148,84 @@ elif menu == "View Matches":
                 use_container_width=True,
                 hide_index=True
             )
+        else:
+            st.warning("No matching time slots found yet.")
+    else:
+        st.info("No availability has been added for this meeting yet.")
+
+
+elif menu == "AI Email Assistant":
+    st.header("AI Email Assistant")
+
+    meeting_id = st.number_input(
+        "Meeting ID",
+        min_value=1,
+        step=1,
+        key="ai_meeting_id"
+    )
+
+    meeting_title = st.text_input(
+        "Meeting Title",
+        value="EIC Pathfinder Collaboration Meeting"
+    )
+
+    rows = get_availability(meeting_id)
+
+    if rows:
+        df = pd.DataFrame(
+            rows,
+            columns=[
+                "Name",
+                "Email",
+                "Role",
+                "Date",
+                "Start Time",
+                "End Time"
+            ]
+        )
+
+        organizer_df = df[df["Role"] == "Organizer"]
+        participant_df = df[df["Role"] == "Participant"]
+
+        matches = []
+
+        for _, organizer in organizer_df.iterrows():
+            for _, participant in participant_df.iterrows():
+                if organizer["Date"] == participant["Date"]:
+                    latest_start = max(
+                        organizer["Start Time"],
+                        participant["Start Time"]
+                    )
+                    earliest_end = min(
+                        organizer["End Time"],
+                        participant["End Time"]
+                    )
+
+                    if latest_start < earliest_end:
+                        matches.append({
+                            "Date": organizer["Date"],
+                            "Available From": latest_start,
+                            "Available Until": earliest_end,
+                            "Organizer": organizer["Name"],
+                            "Participant": participant["Name"]
+                        })
+
+        if matches:
+            st.subheader("Matching Time Slots")
+            st.dataframe(
+                pd.DataFrame(matches),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            if st.button("Generate Professional Email"):
+                email_text = generate_meeting_email(meeting_title, matches)
+                st.subheader("Generated Email")
+                st.text_area(
+                    "Email Body",
+                    value=email_text,
+                    height=300
+                )
         else:
             st.warning("No matching time slots found yet.")
     else:
