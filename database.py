@@ -18,7 +18,10 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         meeting_code TEXT UNIQUE NOT NULL,
         title TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        archived_at TEXT,
+        cancel_reason TEXT
     )
     """)
 
@@ -35,6 +38,20 @@ def init_db():
     )
     """)
 
+    # Migration support for old database
+    existing_columns = [
+        row[1] for row in cur.execute("PRAGMA table_info(meetings)").fetchall()
+    ]
+
+    if "status" not in existing_columns:
+        cur.execute("ALTER TABLE meetings ADD COLUMN status TEXT DEFAULT 'active'")
+
+    if "archived_at" not in existing_columns:
+        cur.execute("ALTER TABLE meetings ADD COLUMN archived_at TEXT")
+
+    if "cancel_reason" not in existing_columns:
+        cur.execute("ALTER TABLE meetings ADD COLUMN cancel_reason TEXT")
+
     conn.commit()
     conn.close()
 
@@ -46,9 +63,14 @@ def create_meeting(title):
     meeting_code = str(uuid.uuid4())[:8].upper()
 
     cur.execute("""
-    INSERT INTO meetings (meeting_code, title, created_at)
-    VALUES (?, ?, ?)
-    """, (meeting_code, title, datetime.now().isoformat()))
+    INSERT INTO meetings (meeting_code, title, created_at, status)
+    VALUES (?, ?, ?, ?)
+    """, (
+        meeting_code,
+        title,
+        datetime.now().isoformat(),
+        "active"
+    ))
 
     conn.commit()
     conn.close()
@@ -61,7 +83,7 @@ def get_meeting(meeting_code):
     cur = conn.cursor()
 
     cur.execute("""
-    SELECT meeting_code, title, created_at
+    SELECT meeting_code, title, created_at, status, archived_at, cancel_reason
     FROM meetings
     WHERE meeting_code = ?
     """, (meeting_code,))
@@ -70,6 +92,59 @@ def get_meeting(meeting_code):
     conn.close()
 
     return row
+
+
+def cancel_meeting(meeting_code, reason=""):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    UPDATE meetings
+    SET status = 'cancelled',
+        archived_at = ?,
+        cancel_reason = ?
+    WHERE meeting_code = ?
+    """, (
+        datetime.now().isoformat(),
+        reason,
+        meeting_code
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def restore_meeting(meeting_code):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    UPDATE meetings
+    SET status = 'active',
+        archived_at = NULL,
+        cancel_reason = NULL
+    WHERE meeting_code = ?
+    """, (meeting_code,))
+
+    conn.commit()
+    conn.close()
+
+
+def get_archived_meetings():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT meeting_code, title, created_at, archived_at, cancel_reason
+    FROM meetings
+    WHERE status = 'cancelled'
+    ORDER BY archived_at DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return rows
 
 
 def add_availability(meeting_code, name, email, role, date, start_time, end_time):
