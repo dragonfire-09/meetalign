@@ -1,86 +1,142 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+from database import init_db, add_availability, get_availability
 
-def get_conn():
-    return sqlite3.connect("meetalign.db", check_same_thread=False)
+init_db()
 
-conn = get_conn()
-cur = conn.cursor()
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS availability (
-    meeting_id INTEGER,
-    name TEXT,
-    role TEXT,
-    date TEXT,
-    start TEXT,
-    end TEXT
+st.set_page_config(
+    page_title="MeetAlign",
+    page_icon="📅",
+    layout="wide"
 )
-""")
-
-conn.commit()
 
 st.title("📅 MeetAlign")
+st.caption("Smart meeting availability tool for project teams")
 
-menu = st.sidebar.radio("Menu", ["Create Meeting", "Add Availability", "View Matches"])
+menu = st.sidebar.radio(
+    "Menu",
+    ["Create Meeting", "Add Availability", "View Matches"]
+)
 
 if menu == "Create Meeting":
     st.header("Create Meeting")
-    meeting_id = st.number_input("Choose Meeting ID", min_value=1, step=1)
 
-    if st.button("Create"):
-        st.success(f"Meeting created! Share ID: {meeting_id}")
+    meeting_id = st.number_input(
+        "Choose Meeting ID",
+        min_value=1,
+        step=1
+    )
+
+    meeting_title = st.text_input(
+        "Meeting Title",
+        placeholder="EIC Pathfinder Collaboration Meeting"
+    )
+
+    if st.button("Create Meeting"):
+        if meeting_title:
+            st.success("Meeting created successfully.")
+            st.info(f"Share this Meeting ID: {meeting_id}")
+        else:
+            st.warning("Please enter a meeting title.")
 
 elif menu == "Add Availability":
     st.header("Add Availability")
 
-    meeting_id = st.number_input("Meeting ID", min_value=1)
+    meeting_id = st.number_input(
+        "Meeting ID",
+        min_value=1,
+        step=1
+    )
+
     name = st.text_input("Your Name")
+    email = st.text_input("Your Email")
     role = st.selectbox("Role", ["Organizer", "Participant"])
 
-    date = st.date_input("Date")
-    start = st.time_input("Start Time")
-    end = st.time_input("End Time")
+    date = st.date_input("Available Date")
+    start_time = st.time_input("Start Time")
+    end_time = st.time_input("End Time")
 
-    if st.button("Save"):
-        cur.execute("""
-        INSERT INTO availability VALUES (?, ?, ?, ?, ?, ?)
-        """, (meeting_id, name, role, str(date), str(start), str(end)))
-        conn.commit()
-        st.success("Saved!")
+    if st.button("Save Availability"):
+        if not name:
+            st.warning("Please enter your name.")
+        elif start_time >= end_time:
+            st.warning("End time must be later than start time.")
+        else:
+            add_availability(
+                meeting_id,
+                name,
+                email,
+                role,
+                date,
+                start_time,
+                end_time
+            )
+            st.success("Availability saved successfully.")
 
 elif menu == "View Matches":
-    st.header("Matches")
+    st.header("View Matches")
 
-    meeting_id = st.number_input("Meeting ID", min_value=1, key="view")
+    meeting_id = st.number_input(
+        "Meeting ID",
+        min_value=1,
+        step=1,
+        key="match_meeting_id"
+    )
 
-    df = pd.read_sql_query(f"""
-    SELECT * FROM availability WHERE meeting_id = {meeting_id}
-    """, conn)
+    rows = get_availability(meeting_id)
 
-    if not df.empty:
-        st.dataframe(df)
+    if rows:
+        df = pd.DataFrame(
+            rows,
+            columns=[
+                "Name",
+                "Email",
+                "Role",
+                "Date",
+                "Start Time",
+                "End Time"
+            ]
+        )
 
-        org = df[df["role"] == "Organizer"]
-        part = df[df["role"] == "Participant"]
+        st.subheader("All Availability")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        organizer_df = df[df["Role"] == "Organizer"]
+        participant_df = df[df["Role"] == "Participant"]
 
         matches = []
 
-        for _, o in org.iterrows():
-            for _, p in part.iterrows():
-                if o["date"] == p["date"]:
-                    if o["start"] < p["end"] and p["start"] < o["end"]:
+        for _, organizer in organizer_df.iterrows():
+            for _, participant in participant_df.iterrows():
+                if organizer["Date"] == participant["Date"]:
+                    latest_start = max(
+                        organizer["Start Time"],
+                        participant["Start Time"]
+                    )
+                    earliest_end = min(
+                        organizer["End Time"],
+                        participant["End Time"]
+                    )
+
+                    if latest_start < earliest_end:
                         matches.append({
-                            "date": o["date"],
-                            "start": max(o["start"], p["start"]),
-                            "end": min(o["end"], p["end"])
+                            "Date": organizer["Date"],
+                            "Available From": latest_start,
+                            "Available Until": earliest_end,
+                            "Organizer": organizer["Name"],
+                            "Participant": participant["Name"]
                         })
 
+        st.subheader("Matching Time Slots")
+
         if matches:
-            st.success("Matching slots found!")
-            st.dataframe(pd.DataFrame(matches))
+            st.success("Matching slots found.")
+            st.dataframe(
+                pd.DataFrame(matches),
+                use_container_width=True,
+                hide_index=True
+            )
         else:
-            st.warning("No matches yet.")
+            st.warning("No matching time slots found yet.")
     else:
-        st.info("No data yet.")
+        st.info("No availability has been added for this meeting yet.")
