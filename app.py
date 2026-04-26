@@ -1,6 +1,12 @@
 import streamlit as st
 import pandas as pd
-from database import init_db, add_availability, get_availability
+from database import (
+    init_db,
+    create_meeting,
+    get_meeting,
+    add_availability,
+    get_availability
+)
 from ai_assistant import generate_meeting_email
 
 init_db()
@@ -11,47 +17,138 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    }
+
+    section[data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid #e5e7eb;
+    }
+
+    .hero-card {
+        background: #ffffff;
+        padding: 28px;
+        border-radius: 24px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+        margin-bottom: 24px;
+    }
+
+    .main-title {
+        font-size: 42px;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 4px;
+    }
+
+    .subtitle {
+        font-size: 17px;
+        color: #6b7280;
+        margin-bottom: 16px;
+    }
+
+    .section-card {
+        background: #ffffff;
+        padding: 24px;
+        border-radius: 22px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        margin-top: 18px;
+        margin-bottom: 18px;
+    }
+
+    .step-card {
+        background: #f8fafc;
+        padding: 18px 20px;
+        border-radius: 18px;
+        border: 1px solid #e5e7eb;
+        margin-bottom: 18px;
+    }
+
+    .metric-card {
+        background: #ffffff;
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        text-align: center;
+    }
+
+    .metric-number {
+        font-size: 28px;
+        font-weight: 800;
+        color: #2563eb;
+    }
+
+    .metric-label {
+        font-size: 14px;
+        color: #6b7280;
+    }
+
+    .empty-state {
+        background: #ffffff;
+        padding: 28px;
+        border-radius: 22px;
+        border: 1px dashed #cbd5e1;
+        text-align: center;
+        color: #64748b;
+        margin-top: 18px;
+    }
+
+    div.stButton > button {
+        background: linear-gradient(90deg, #2563eb, #4f46e5);
+        color: white;
+        border: none;
+        border-radius: 14px;
+        padding: 0.7rem 1.2rem;
+        font-weight: 700;
+        box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+    }
+
+    div.stButton > button:hover {
+        background: linear-gradient(90deg, #1d4ed8, #4338ca);
+        color: white;
+        border: none;
+    }
+
+    .small-muted {
+        font-size: 14px;
+        color: #6b7280;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 TEXT = {
     "English": {
-        "title": "📅 MeetAlign",
-        "caption": "Smart meeting availability tool for project teams",
-        "welcome": "Welcome to **MeetAlign**. This tool helps people find a common meeting time.",
-        "language": "Platform Language",
-        "menu": "Menu",
+        "title": "MeetAlign",
+        "caption": "Smart meeting availability platform for project teams, researchers and consortium partners.",
+        "menu": "Workspace",
         "create": "Create Meeting",
         "add": "Add Availability",
         "view": "View Matches",
         "ai": "AI Email Assistant",
-
+        "hero": "Coordinate meetings without endless back-and-forth emails.",
+        "hero_sub": "Create a meeting link, collect availability, find overlapping time slots and generate a professional follow-up email.",
         "create_header": "Create Meeting",
-        "create_help": """
-Step 1: Create a meeting.
-
-1. Enter a meeting title.
-2. Choose or keep the Meeting ID.
-3. Click **Create Meeting**.
-4. Share this Meeting ID with the other person.
-""",
-        "meeting_id": "Meeting ID",
-        "choose_meeting_id": "Choose Meeting ID",
+        "create_help": "Create a new meeting. The platform will generate a unique Meeting Code and shareable link.",
+        "add_header": "Add Availability",
+        "add_help": "Open the meeting link or enter the Meeting Code manually, then add your availability.",
+        "view_header": "View Matching Slots",
+        "view_help": "Review all availability and identify overlapping time windows.",
+        "ai_header": "AI Email Assistant",
+        "ai_help": "Generate a professional meeting email from the matched time slots.",
+        "meeting_code": "Meeting Code",
+        "meeting_link": "Shareable Meeting Link",
         "meeting_title": "Meeting Title",
         "meeting_placeholder": "EIC Pathfinder Collaboration Meeting",
-        "create_button": "Create Meeting",
-        "created_success": "Meeting created successfully.",
-        "share_id": "Share this Meeting ID:",
-        "example_message": "Example message:",
+        "create_button": "Create Meeting Link",
+        "created_success": "Meeting link created successfully.",
+        "copy_message": "Copy this invitation message:",
         "fill_title": "Please enter a meeting title.",
-
-        "add_header": "Add Availability",
-        "add_help": """
-Step 2: Add your availability.
-
-1. Enter the Meeting ID you received.
-2. Write your name and email.
-3. Select your role.
-4. Choose the date and available time range.
-5. Click **Save Availability**.
-""",
         "your_name": "Your Name",
         "your_email": "Your Email",
         "role": "Role",
@@ -62,37 +159,21 @@ Step 2: Add your availability.
         "end": "End Time",
         "save": "Save Availability",
         "name_warning": "Please enter your name.",
+        "code_warning": "Please enter a Meeting Code.",
         "time_warning": "End time must be later than start time.",
         "saved": "Availability saved successfully.",
-
-        "view_header": "View Matches",
-        "view_help": """
-Step 3: View matching time slots.
-
-1. Enter the Meeting ID.
-2. The system will show all submitted availability.
-3. If both sides selected overlapping times, the matching slots will appear below.
-4. Use one of the matching slots to confirm the meeting.
-""",
         "all_availability": "All Availability",
         "matching_slots": "Matching Time Slots",
         "matches_found": "Matching slots found.",
         "no_matches": "No matching time slots found yet.",
         "no_data": "No availability has been added for this meeting yet.",
-
-        "ai_header": "AI Email Assistant",
-        "ai_help": """
-Step 4: Generate a professional email.
-
-1. Enter the Meeting ID.
-2. Check the matching time slots.
-3. Click **Generate Professional Email**.
-4. Copy the generated email and send it to the participant.
-""",
+        "meeting_not_found": "Meeting not found. Please check the Meeting Code.",
         "generate_email": "Generate Professional Email",
         "generated_email": "Generated Email",
         "email_body": "Email Body",
-
+        "total_entries": "Availability Entries",
+        "total_matches": "Matching Slots",
+        "participants": "People",
         "col_name": "Name",
         "col_email": "Email",
         "col_role": "Role",
@@ -102,47 +183,32 @@ Step 4: Generate a professional email.
         "col_from": "Available From",
         "col_until": "Available Until",
     },
-
     "Türkçe": {
-        "title": "📅 MeetAlign",
-        "caption": "Proje ekipleri için akıllı toplantı uygunluk aracı",
-        "welcome": "**MeetAlign**’a hoş geldiniz. Bu araç, iki veya daha fazla kişinin ortak toplantı zamanı bulmasına yardımcı olur.",
-        "language": "Platform Dili",
-        "menu": "Menü",
+        "title": "MeetAlign",
+        "caption": "Proje ekipleri, araştırmacılar ve konsorsiyum ortakları için akıllı toplantı planlama platformu.",
+        "menu": "Çalışma Alanı",
         "create": "Toplantı Oluştur",
         "add": "Uygunluk Ekle",
         "view": "Eşleşmeleri Gör",
         "ai": "AI E-posta Asistanı",
-
+        "hero": "Bitmeyen e-posta trafiği olmadan toplantı zamanı belirleyin.",
+        "hero_sub": "Toplantı linki oluşturun, uygunlukları toplayın, ortak saatleri bulun ve profesyonel takip e-postası üretin.",
         "create_header": "Toplantı Oluştur",
-        "create_help": """
-Adım 1: Toplantı oluşturun.
-
-1. Toplantı başlığını yazın.
-2. Meeting ID’yi seçin veya mevcut değeri kullanın.
-3. **Toplantı Oluştur** butonuna basın.
-4. Bu Meeting ID’yi karşı tarafla paylaşın.
-""",
-        "meeting_id": "Meeting ID",
-        "choose_meeting_id": "Meeting ID Seç",
+        "create_help": "Yeni bir toplantı oluşturun. Platform otomatik Meeting Code ve paylaşım linki üretecek.",
+        "add_header": "Uygunluk Ekle",
+        "add_help": "Toplantı linkini açın veya Meeting Code’u manuel girin, sonra uygunluğunuzu ekleyin.",
+        "view_header": "Ortak Saatleri Gör",
+        "view_help": "Tüm uygunlukları inceleyin ve çakışan ortak zaman aralıklarını bulun.",
+        "ai_header": "AI E-posta Asistanı",
+        "ai_help": "Eşleşen saatlerden profesyonel toplantı e-postası oluşturun.",
+        "meeting_code": "Meeting Code",
+        "meeting_link": "Paylaşılabilir Toplantı Linki",
         "meeting_title": "Toplantı Başlığı",
         "meeting_placeholder": "EIC Pathfinder İş Birliği Toplantısı",
-        "create_button": "Toplantı Oluştur",
-        "created_success": "Toplantı başarıyla oluşturuldu.",
-        "share_id": "Bu Meeting ID’yi paylaşın:",
-        "example_message": "Örnek mesaj:",
+        "create_button": "Toplantı Linki Oluştur",
+        "created_success": "Toplantı linki başarıyla oluşturuldu.",
+        "copy_message": "Bu davet mesajını kopyalayın:",
         "fill_title": "Lütfen toplantı başlığı girin.",
-
-        "add_header": "Uygunluk Ekle",
-        "add_help": """
-Adım 2: Uygun olduğunuz zamanı ekleyin.
-
-1. Size verilen Meeting ID’yi girin.
-2. Adınızı ve e-posta adresinizi yazın.
-3. Rolünüzü seçin.
-4. Uygun olduğunuz tarih ve saat aralığını girin.
-5. **Uygunluk Kaydet** butonuna basın.
-""",
         "your_name": "Adınız",
         "your_email": "E-posta Adresiniz",
         "role": "Rol",
@@ -153,37 +219,21 @@ Adım 2: Uygun olduğunuz zamanı ekleyin.
         "end": "Bitiş Saati",
         "save": "Uygunluk Kaydet",
         "name_warning": "Lütfen adınızı girin.",
+        "code_warning": "Lütfen Meeting Code girin.",
         "time_warning": "Bitiş saati başlangıç saatinden sonra olmalıdır.",
         "saved": "Uygunluk başarıyla kaydedildi.",
-
-        "view_header": "Eşleşmeleri Gör",
-        "view_help": """
-Adım 3: Ortak uygun saatleri görün.
-
-1. Meeting ID’yi girin.
-2. Sistem girilen tüm uygunlukları gösterecek.
-3. İki tarafın saatleri çakışıyorsa ortak zamanlar aşağıda listelenecek.
-4. Bu ortak zamanlardan birini toplantı için onaylayabilirsiniz.
-""",
         "all_availability": "Tüm Uygunluklar",
         "matching_slots": "Ortak Uygun Saatler",
         "matches_found": "Ortak uygun saat bulundu.",
         "no_matches": "Henüz ortak uygun saat bulunamadı.",
-        "no_data": "Bu Meeting ID için henüz uygunluk eklenmemiş.",
-
-        "ai_header": "AI E-posta Asistanı",
-        "ai_help": """
-Adım 4: Profesyonel e-posta oluşturun.
-
-1. Meeting ID’yi girin.
-2. Ortak uygun saatleri kontrol edin.
-3. **Profesyonel E-posta Oluştur** butonuna basın.
-4. Oluşan e-postayı kopyalayıp karşı tarafa gönderin.
-""",
+        "no_data": "Bu Meeting Code için henüz uygunluk eklenmemiş.",
+        "meeting_not_found": "Toplantı bulunamadı. Lütfen Meeting Code’u kontrol edin.",
         "generate_email": "Profesyonel E-posta Oluştur",
         "generated_email": "Oluşturulan E-posta",
         "email_body": "E-posta Metni",
-
+        "total_entries": "Uygunluk Kaydı",
+        "total_matches": "Ortak Saat",
+        "participants": "Kişi",
         "col_name": "Ad",
         "col_email": "E-posta",
         "col_role": "Rol",
@@ -194,6 +244,68 @@ Adım 4: Profesyonel e-posta oluşturun.
         "col_until": "Uygun Bitiş",
     }
 }
+
+
+def get_base_url():
+    try:
+        return st.context.url.split("?")[0]
+    except Exception:
+        return "https://your-app-url.streamlit.app"
+
+
+def get_query_meeting_code():
+    try:
+        return st.query_params.get("meeting", "")
+    except Exception:
+        return ""
+
+
+def set_meeting_query(meeting_code):
+    st.query_params["meeting"] = meeting_code
+
+
+def section_open():
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+
+
+def section_close():
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def step_card(title, text):
+    st.markdown(
+        f"""
+        <div class="step-card">
+            <strong>{title}</strong><br>
+            <span class="small-muted">{text}</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def metric_card(number, label):
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-number">{number}</div>
+            <div class="metric-label">{label}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def empty_state(message):
+    st.markdown(
+        f"""
+        <div class="empty-state">
+            <h4>📭</h4>
+            <p>{message}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 def calculate_matches(df, t):
@@ -226,8 +338,8 @@ def calculate_matches(df, t):
     return matches
 
 
-def get_availability_dataframe(meeting_id, t):
-    rows = get_availability(meeting_id)
+def get_availability_dataframe(meeting_code, t):
+    rows = get_availability(meeting_code)
 
     if not rows:
         return pd.DataFrame()
@@ -252,73 +364,128 @@ language = st.sidebar.selectbox(
 
 t = TEXT[language]
 
-st.title(t["title"])
-st.caption(t["caption"])
-st.markdown(t["welcome"])
+query_meeting_code = get_query_meeting_code()
+
+st.sidebar.markdown("### 📅 MeetAlign")
+
+default_menu_index = 1 if query_meeting_code else 0
 
 menu = st.sidebar.radio(
     t["menu"],
-    [t["create"], t["add"], t["view"], t["ai"]]
+    [t["create"], t["add"], t["view"], t["ai"]],
+    index=default_menu_index
+)
+
+st.markdown(
+    f"""
+    <div class="hero-card">
+        <div class="main-title">📅 {t["title"]}</div>
+        <div class="subtitle">{t["caption"]}</div>
+        <h3>{t["hero"]}</h3>
+        <p class="small-muted">{t["hero_sub"]}</p>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 
 if menu == t["create"]:
     st.header(t["create_header"])
-    st.info(t["create_help"])
+    step_card("Step 1 / Adım 1", t["create_help"])
 
-    meeting_id = st.number_input(
-        t["choose_meeting_id"],
-        min_value=1,
-        step=1
-    )
-
+    section_open()
     meeting_title = st.text_input(
         t["meeting_title"],
         placeholder=t["meeting_placeholder"]
     )
 
-    if st.button(t["create_button"]):
+    if st.button(t["create_button"], use_container_width=True):
         if meeting_title:
+            meeting_code = create_meeting(meeting_title)
+            meeting_link = f"{get_base_url()}?meeting={meeting_code}"
+
             st.success(t["created_success"])
-            st.info(f"{t['share_id']} {meeting_id}")
-            st.write(t["example_message"])
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.text_input(t["meeting_code"], value=meeting_code)
+
+            with c2:
+                st.text_input(t["meeting_link"], value=meeting_link)
+
+            st.write(t["copy_message"])
             st.code(
-                f"Please add your availability for our meeting using Meeting ID: {meeting_id}"
+                f"""Hello,
+
+Please add your availability for our meeting using the link below:
+
+{meeting_link}
+
+Meeting Code: {meeting_code}
+
+Best regards"""
             )
+
+            set_meeting_query(meeting_code)
+
         else:
             st.warning(t["fill_title"])
+    section_close()
 
 
 elif menu == t["add"]:
     st.header(t["add_header"])
-    st.info(t["add_help"])
+    step_card("Step 2 / Adım 2", t["add_help"])
 
-    meeting_id = st.number_input(
-        t["meeting_id"],
-        min_value=1,
-        step=1
-    )
+    section_open()
 
-    name = st.text_input(t["your_name"])
-    email = st.text_input(t["your_email"])
+    default_code = query_meeting_code if query_meeting_code else ""
 
-    role_label = st.selectbox(
-        t["role"],
-        [t["organizer"], t["participant"]]
-    )
+    meeting_code = st.text_input(
+        t["meeting_code"],
+        value=default_code,
+        placeholder="AB12CD34"
+    ).strip().upper()
 
-    date = st.date_input(t["date"])
-    start_time = st.time_input(t["start"])
-    end_time = st.time_input(t["end"])
+    meeting = get_meeting(meeting_code) if meeting_code else None
 
-    if st.button(t["save"]):
-        if not name:
+    if meeting_code and meeting:
+        st.success(f"{meeting[1]}")
+
+    elif meeting_code and not meeting:
+        st.warning(t["meeting_not_found"])
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        name = st.text_input(t["your_name"])
+        email = st.text_input(t["your_email"])
+
+    with c2:
+        role_label = st.selectbox(t["role"], [t["organizer"], t["participant"]])
+        date = st.date_input(t["date"])
+
+        time_c1, time_c2 = st.columns(2)
+
+        with time_c1:
+            start_time = st.time_input(t["start"])
+
+        with time_c2:
+            end_time = st.time_input(t["end"])
+
+    if st.button(t["save"], use_container_width=True):
+        if not meeting_code:
+            st.warning(t["code_warning"])
+        elif not name:
             st.warning(t["name_warning"])
         elif start_time >= end_time:
             st.warning(t["time_warning"])
+        elif not get_meeting(meeting_code):
+            st.warning(t["meeting_not_found"])
         else:
             add_availability(
-                meeting_id,
+                meeting_code,
                 name,
                 email,
                 role_label,
@@ -328,92 +495,138 @@ elif menu == t["add"]:
             )
             st.success(t["saved"])
 
+    section_close()
+
 
 elif menu == t["view"]:
     st.header(t["view_header"])
-    st.info(t["view_help"])
+    step_card("Step 3 / Adım 3", t["view_help"])
 
-    meeting_id = st.number_input(
-        t["meeting_id"],
-        min_value=1,
-        step=1,
-        key="match_meeting_id"
-    )
+    default_code = query_meeting_code if query_meeting_code else ""
 
-    df = get_availability_dataframe(meeting_id, t)
+    meeting_code = st.text_input(
+        t["meeting_code"],
+        value=default_code,
+        key="view_meeting_code"
+    ).strip().upper()
 
-    if not df.empty:
-        st.subheader(t["all_availability"])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    if meeting_code:
+        meeting = get_meeting(meeting_code)
 
-        matches = calculate_matches(df, t)
+        if meeting:
+            st.success(meeting[1])
 
-        st.subheader(t["matching_slots"])
+        df = get_availability_dataframe(meeting_code, t)
 
-        if matches:
-            st.success(t["matches_found"])
-            st.dataframe(
-                pd.DataFrame(matches),
-                use_container_width=True,
-                hide_index=True
-            )
+        if not df.empty:
+            matches = calculate_matches(df, t)
+
+            m1, m2, m3 = st.columns(3)
+
+            with m1:
+                metric_card(len(df), t["total_entries"])
+
+            with m2:
+                metric_card(len(matches), t["total_matches"])
+
+            with m3:
+                metric_card(df[t["col_email"]].nunique(), t["participants"])
+
+            section_open()
+            st.subheader(t["all_availability"])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            section_close()
+
+            section_open()
+            st.subheader(t["matching_slots"])
+
+            if matches:
+                st.success(t["matches_found"])
+                st.dataframe(
+                    pd.DataFrame(matches),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.warning(t["no_matches"])
+
+            section_close()
+
         else:
-            st.warning(t["no_matches"])
+            empty_state(t["no_data"])
     else:
-        st.info(t["no_data"])
+        empty_state(t["code_warning"])
 
 
 elif menu == t["ai"]:
     st.header(t["ai_header"])
-    st.info(t["ai_help"])
+    step_card("Step 4 / Adım 4", t["ai_help"])
 
-    meeting_id = st.number_input(
-        t["meeting_id"],
-        min_value=1,
-        step=1,
-        key="ai_meeting_id"
-    )
+    section_open()
+
+    default_code = query_meeting_code if query_meeting_code else ""
+
+    meeting_code = st.text_input(
+        t["meeting_code"],
+        value=default_code,
+        key="ai_meeting_code"
+    ).strip().upper()
+
+    meeting = get_meeting(meeting_code) if meeting_code else None
+
+    if meeting:
+        default_title = meeting[1]
+    else:
+        default_title = t["meeting_placeholder"]
 
     meeting_title = st.text_input(
         t["meeting_title"],
-        value=t["meeting_placeholder"]
+        value=default_title
     )
 
-    df = get_availability_dataframe(meeting_id, t)
+    section_close()
 
-    if not df.empty:
-        matches = calculate_matches(df, t)
+    if meeting_code:
+        df = get_availability_dataframe(meeting_code, t)
 
-        if matches:
-            st.subheader(t["matching_slots"])
-            st.dataframe(
-                pd.DataFrame(matches),
-                use_container_width=True,
-                hide_index=True
-            )
+        if not df.empty:
+            matches = calculate_matches(df, t)
 
-            if st.button(t["generate_email"]):
-                normalized_matches = []
-
-                for item in matches:
-                    normalized_matches.append({
-                        "Date": item[t["col_date"]],
-                        "Available From": item[t["col_from"]],
-                        "Available Until": item[t["col_until"]],
-                    })
-
-                email_text = generate_meeting_email(
-                    meeting_title,
-                    normalized_matches
+            if matches:
+                section_open()
+                st.subheader(t["matching_slots"])
+                st.dataframe(
+                    pd.DataFrame(matches),
+                    use_container_width=True,
+                    hide_index=True
                 )
 
-                st.subheader(t["generated_email"])
-                st.text_area(
-                    t["email_body"],
-                    value=email_text,
-                    height=300
-                )
+                if st.button(t["generate_email"], use_container_width=True):
+                    normalized_matches = []
+
+                    for item in matches:
+                        normalized_matches.append({
+                            "Date": item[t["col_date"]],
+                            "Available From": item[t["col_from"]],
+                            "Available Until": item[t["col_until"]],
+                        })
+
+                    email_text = generate_meeting_email(
+                        meeting_title,
+                        normalized_matches
+                    )
+
+                    st.subheader(t["generated_email"])
+                    st.text_area(
+                        t["email_body"],
+                        value=email_text,
+                        height=300
+                    )
+
+                section_close()
+            else:
+                empty_state(t["no_matches"])
         else:
-            st.warning(t["no_matches"])
+            empty_state(t["no_data"])
     else:
-        st.info(t["no_data"])
+        empty_state(t["code_warning"])
