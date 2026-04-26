@@ -9,7 +9,7 @@ from database import (
     add_availability,
     get_availability
 )
-from ai_assistant import generate_meeting_email, ai_chatbot_response
+from ai_assistant import generate_meeting_email, ai_chatbot_response 
 from datetime import datetime
 import uuid
 
