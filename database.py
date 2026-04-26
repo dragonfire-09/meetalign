@@ -1,4 +1,6 @@
 import sqlite3
+import uuid
+from datetime import datetime
 
 DB_NAME = "meetalign.db"
 
@@ -12,9 +14,18 @@ def init_db():
     cur = conn.cursor()
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS meetings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_code TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS availability (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        meeting_id INTEGER NOT NULL,
+        meeting_code TEXT NOT NULL,
         name TEXT NOT NULL,
         email TEXT,
         role TEXT NOT NULL,
@@ -28,16 +39,48 @@ def init_db():
     conn.close()
 
 
-def add_availability(meeting_id, name, email, role, date, start_time, end_time):
+def create_meeting(title):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    meeting_code = str(uuid.uuid4())[:8].upper()
+
+    cur.execute("""
+    INSERT INTO meetings (meeting_code, title, created_at)
+    VALUES (?, ?, ?)
+    """, (meeting_code, title, datetime.now().isoformat()))
+
+    conn.commit()
+    conn.close()
+
+    return meeting_code
+
+
+def get_meeting(meeting_code):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT meeting_code, title, created_at
+    FROM meetings
+    WHERE meeting_code = ?
+    """, (meeting_code,))
+
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def add_availability(meeting_code, name, email, role, date, start_time, end_time):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
     INSERT INTO availability 
-    (meeting_id, name, email, role, date, start_time, end_time)
+    (meeting_code, name, email, role, date, start_time, end_time)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
-        meeting_id,
+        meeting_code,
         name,
         email,
         role,
@@ -50,15 +93,15 @@ def add_availability(meeting_id, name, email, role, date, start_time, end_time):
     conn.close()
 
 
-def get_availability(meeting_id):
+def get_availability(meeting_code):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
     SELECT name, email, role, date, start_time, end_time
     FROM availability
-    WHERE meeting_id = ?
-    """, (meeting_id,))
+    WHERE meeting_code = ?
+    """, (meeting_code,))
 
     rows = cur.fetchall()
     conn.close()
