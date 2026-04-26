@@ -1,37 +1,37 @@
 import sqlite3
-from datetime import datetime
 import uuid
+from datetime import datetime
 
-DATABASE_FILE = "meetalign.db"
+DB_NAME = "meetalign_v2.db"
+
+
+def get_connection():
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 
 def init_db():
-    """
-    Veritabanını başlatır ve gerekli tabloları oluşturur.
-    """
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    # Meetings tablosu
-    cursor.execute("""
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS meetings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        meeting_code TEXT UNIQUE,
-        title TEXT
+        meeting_code TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL
     )
     """)
 
-    # Availability tablosu
-    cursor.execute("""
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS availability (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        meeting_code TEXT,
-        name TEXT,
+        meeting_code TEXT NOT NULL,
+        name TEXT NOT NULL,
         email TEXT,
-        role TEXT,
-        date TEXT,
-        start_time TEXT,
-        end_time TEXT
+        role TEXT NOT NULL,
+        date TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL
     )
     """)
 
@@ -40,17 +40,15 @@ def init_db():
 
 
 def create_meeting(title):
-    """
-    Yeni bir toplantı oluştur ve benzersiz bir meeting_code üretip kaydet.
-    """
-    meeting_code = generate_meeting_code()
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    INSERT INTO meetings (meeting_code, title) 
-    VALUES (?, ?)
-    """, (meeting_code, title))
+    meeting_code = str(uuid.uuid4())[:8].upper()
+
+    cur.execute("""
+    INSERT INTO meetings (meeting_code, title, created_at)
+    VALUES (?, ?, ?)
+    """, (meeting_code, title, datetime.now().isoformat()))
 
     conn.commit()
     conn.close()
@@ -59,60 +57,54 @@ def create_meeting(title):
 
 
 def get_meeting(meeting_code):
-    """
-    Belirtilen meeting_code'a sahip toplantıyı veritabanından getir.
-    """
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    SELECT * FROM meetings 
+    cur.execute("""
+    SELECT meeting_code, title, created_at
+    FROM meetings
     WHERE meeting_code = ?
     """, (meeting_code,))
 
-    meeting = cursor.fetchone()
+    row = cur.fetchone()
     conn.close()
 
-    return meeting
+    return row
 
 
 def add_availability(meeting_code, name, email, role, date, start_time, end_time):
-    """
-    Belirtilen meeting_code için yeni bir uygunluk kaydı ekler.
-    """
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    INSERT INTO availability (meeting_code, name, email, role, date, start_time, end_time)
+    cur.execute("""
+    INSERT INTO availability 
+    (meeting_code, name, email, role, date, start_time, end_time)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (meeting_code, name, email, role, date.strftime("%Y-%m-%d"), start_time.strftime("%H:%M"), end_time.strftime("%H:%M")))
+    """, (
+        meeting_code,
+        name,
+        email,
+        role,
+        str(date),
+        str(start_time),
+        str(end_time)
+    ))
 
     conn.commit()
     conn.close()
 
 
 def get_availability(meeting_code):
-    """
-    Belirtilen meeting_code'a sahip tüm uygunlukları getir.
-    """
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    cursor.execute("""
-    SELECT name, email, role, date, start_time, end_time FROM availability 
-    WHERE meeting_code = ? 
-    ORDER BY date, start_time
+    cur.execute("""
+    SELECT name, email, role, date, start_time, end_time
+    FROM availability
+    WHERE meeting_code = ?
     """, (meeting_code,))
 
-    rows = cursor.fetchall()
+    rows = cur.fetchall()
     conn.close()
 
     return rows
-
-
-def generate_meeting_code():
-    """
-    Benzersiz bir toplantı kodu üretir. UUID'nin ilk 8 karakterini alarak oluşturur.
-    """
-    return str(uuid.uuid4())[:8].upper()
