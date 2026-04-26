@@ -13,7 +13,7 @@ from ai_assistant import generate_meeting_email, parse_meeting_command
 
 init_db()
 
-st.set_page_config(
+    st.set_page_config(
     page_title="MeetAlign",
     page_icon="📅",
     layout="wide",
