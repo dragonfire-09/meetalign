@@ -1,89 +1,144 @@
-import openai
-import os
+import json
+import requests
+import streamlit as st
 
-# OpenRouter API Anahtarını Çevre Değişkeninden Al
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Eğer çevre değişkeni yoksa, hata ver (opsiyonel)
-if not OPENROUTER_API_KEY:
-    raise ValueError("OpenRouter API key is not set. Please set the 'OPENROUTER_API_KEY' environment variable.")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# OpenAI istemcisine OpenRouter temel URL'sini (base URL) ve API Anahtarını tanıt
-openai.api_key = OPENROUTER_API_KEY
-openai.api_base = "https://openrouter.ai/api/v1"
 
-# Model adını tanımlayın (OpenRouter üzerinden kullanılacak model)
-MODEL_NAME = "openai/gpt-4o"  # OpenRouter üzerindeki GPT-4o model ismi
+def call_openrouter(prompt, system_message):
+    api_key = st.secrets.get("OPENROUTER_API_KEY", None)
 
-def generate_meeting_email(meeting_title, matches, language="English"):
-    """
-    Toplantı başlığı ve eşleşen zaman dilimlerine göre OpenRouter GPT-4o üzerinden profesyonel bir toplantı davet e-postası oluşturur.
-    """
-    # Eşleşen zaman dilimlerini metne dönüştür
+    if not api_key:
+        return None, "OpenRouter API key is missing. Please add OPENROUTER_API_KEY to Streamlit Secrets."
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://meetalign.streamlit.app",
+        "X-Title": "MeetAlign"
+    }
+
+    payload = {
+        "model": "openai/gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": system_message
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2
+    }
+
+    try:
+        response = requests.post(
+            OPENROUTER_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return None, f"OpenRouter error: {response.status_code} - {response.text}"
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"], None
+
+    except Exception as e:
+        return None, f"AI request failed: {e}"
+
+
+def generate_meeting_email(meeting_title, matches):
+    if not matches:
+        return "No matching time slots found yet."
+
     match_text = "\n".join(
-        [f"- Date: {m['Date']}, From: {m['Available From']}, Until: {m['Available Until']}"
-         for m in matches]
+        [
+            f"- {m['Date']} from {m['Available From']} to {m['Available Until']}"
+            for m in matches
+        ]
     )
 
-    # GPT-4o için prompt hazırlığı (dil seçimi opsiyonel)
-    if language == "English":
-        prompt = f"""
-        Generate a professional meeting invitation email.
-        Meeting Title: {meeting_title}
-        Matching Time Slots:
-        {match_text}
+    prompt = f"""
+Write a concise, professional email in English.
 
-        The email should briefly summarize the matched time slots and encourage participants to confirm the preferred time slot.
-        Include a polite and professional closing.
-        """
-    elif language == "Türkçe":
-        prompt = f"""
-        Lütfen aşağıdaki bilgileri içeren profesyonel bir toplantı davet e-postası oluştur.
-        Toplantı Başlığı: {meeting_title}
-        Eşleşen Zaman Dilimleri:
-        {match_text}
+Meeting title:
+{meeting_title}
 
-        E-posta, eşleşen zaman dilimlerini özetlemeli ve katılımcılardan tercih ettikleri zaman dilimini onaylamalarını rica etmelidir.
-        Kibar ve profesyonel bir kapanış ekleyiniz.
-        """
+Available matching time slots:
+{match_text}
 
-    # OpenRouter API üzerinden GPT-4o modeline istek gönder
-    response = openai.ChatCompletion.create(
-        model=MODEL_NAME,  # OpenRouter üzerinden GPT-4o modelini kullanıyoruz
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that writes professional emails."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=400,
-        temperature=0.7
+Tone:
+Professional, warm, suitable for academic or EU project collaboration.
+
+Output:
+Only the email body. Do not include subject line.
+"""
+
+    result, error = call_openrouter(
+        prompt,
+        "You are a professional email assistant for academic and EU project collaboration meetings."
     )
 
-    # Yanıtı al ve temizle
-    email_body = response["choices"][0]["message"]["content"].strip()
-    return email_body
+    if error:
+        return error
+
+    return result
 
 
-def ai_chatbot_response(message, language="English"):
-    """
-    Kullanıcının mesajına OpenRouter API üzerinden GPT-4o modeli ile yanıt veren AI Chatbot fonksiyonu.
-    """
-    # Sistem mesajını dil seçimine göre ayarla
-    if language == "English":
-        system_message = "You are a friendly, helpful assistant that answers questions about meeting scheduling."
-    elif language == "Türkçe":
-        system_message = "Sen toplantı planlama konusunda yardımcı olan, dostça ve bilgili bir asistansın."
+def parse_meeting_command(user_message):
+    prompt = f"""
+Extract meeting planning information from the user's message.
 
-    # Kullanıcı mesajını OpenRouter API üzerinden GPT-4o modeline gönder
-    response = openai.ChatCompletion.create(
-        model=MODEL_NAME,
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": message}
-        ],
-        max_tokens=300,
-        temperature=0.7
+User message:
+{user_message}
+
+Return ONLY valid JSON with this exact structure:
+{{
+  "meeting_title": "",
+  "participant_name": "",
+  "participant_email": "",
+  "date": "",
+  "start_time": "",
+  "end_time": "",
+  "duration_minutes": 30,
+  "notes": ""
+}}
+
+Rules:
+- If the user does not provide a field, use an empty string.
+- Date must be YYYY-MM-DD if possible.
+- Times must be HH:MM if possible.
+- If only a start time is given and duration exists, calculate end_time.
+- If duration is not clear, use 30 minutes.
+- Understand both Turkish and English.
+- Do not add markdown.
+- Do not wrap JSON in code fences.
+"""
+
+    result, error = call_openrouter(
+        prompt,
+        "You extract structured meeting data from Turkish or English scheduling instructions. You return only valid JSON."
     )
 
-    # Yanıtı al ve temizle
-    bot_reply = response["choices"][0]["message"]["content"].strip()
-    return bot_reply
+    if error:
+        return None, error
+
+    try:
+        return json.loads(result), None
+    except Exception:
+        cleaned = result.strip()
+
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+        elif cleaned.startswith("```"):
+            cleaned = cleaned.replace("```", "").strip()
+
+        try:
+            return json.loads(cleaned), None
+        except Exception:
+            return None, f"AI could not return valid JSON. Raw response: {result}"
