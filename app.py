@@ -1,14 +1,15 @@
+import streamlit as st
+import pandas as pd
+import requests
+from datetime import datetime, timedelta
 from database import (
     init_db,
     create_meeting,
     get_meeting,
-    cancel_meeting,
-    restore_meeting,
-    get_archived_meetings,
     add_availability,
     get_availability
 )
-from ai_assistant import generate_meeting_email, parse_meeting_command
+from ai_assistant import parse_meeting_command
 
 
 init_db()
@@ -22,7 +23,7 @@ st.set_page_config(
 
 
 # -----------------------------
-# CSS
+# STYLE
 # -----------------------------
 st.markdown("""
 <style>
@@ -35,29 +36,28 @@ st.markdown("""
         border-right: 1px solid #e5e7eb;
     }
 
-    .hero-card {
+    .hero {
         background: #ffffff;
         padding: 30px;
         border-radius: 26px;
         border: 1px solid #e5e7eb;
         box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
-        margin-bottom: 26px;
+        margin-bottom: 24px;
     }
 
-    .main-title {
+    .hero-title {
         font-size: 42px;
         font-weight: 850;
         color: #111827;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
     }
 
-    .subtitle {
-        font-size: 17px;
+    .hero-sub {
         color: #6b7280;
-        margin-bottom: 18px;
+        font-size: 17px;
     }
 
-    .section-card {
+    .card {
         background: #ffffff;
         padding: 24px;
         border-radius: 22px;
@@ -67,37 +67,30 @@ st.markdown("""
         margin-bottom: 18px;
     }
 
-    .guide-card {
+    .guide {
         background: #f8fafc;
-        padding: 18px 20px;
-        border-radius: 18px;
+        padding: 16px 18px;
+        border-radius: 16px;
         border: 1px solid #e5e7eb;
+        color: #475569;
         margin-bottom: 18px;
     }
 
-    .metric-card {
+    .pill {
+        display: inline-block;
+        padding: 7px 12px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 700;
+        margin-right: 8px;
+        border: 1px solid #bfdbfe;
+    }
+
+    .empty {
         background: #ffffff;
-        padding: 18px;
-        border-radius: 18px;
-        border: 1px solid #e5e7eb;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-        text-align: center;
-    }
-
-    .metric-number {
-        font-size: 30px;
-        font-weight: 850;
-        color: #2563eb;
-    }
-
-    .metric-label {
-        font-size: 14px;
-        color: #6b7280;
-    }
-
-    .empty-state {
-        background: #ffffff;
-        padding: 30px;
+        padding: 28px;
         border-radius: 22px;
         border: 1px dashed #cbd5e1;
         text-align: center;
@@ -120,211 +113,131 @@ st.markdown("""
         color: white;
         border: none;
     }
-
-    [data-testid="stDataFrame"] {
-        border-radius: 16px;
-        overflow: hidden;
-    }
-
-    .small-muted {
-        font-size: 14px;
-        color: #6b7280;
-    }
-
-    .pill {
-        display: inline-block;
-        padding: 7px 12px;
-        background: #eff6ff;
-        color: #1d4ed8;
-        border-radius: 999px;
-        font-size: 13px;
-        font-weight: 700;
-        margin-right: 8px;
-        border: 1px solid #bfdbfe;
-    }
-
-    .success-soft {
-        background: #ecfdf5;
-        color: #047857;
-        padding: 16px;
-        border-radius: 16px;
-        border: 1px solid #a7f3d0;
-        font-weight: 650;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # -----------------------------
-# Texts
+# TEXT
 # -----------------------------
 TEXT = {
     "English": {
         "menu": "Workspace",
-        "title": "MeetAlign",
-        "caption": "Smart meeting availability platform for project teams, researchers and consortium partners.",
-        "hero": "Coordinate meetings without endless back-and-forth emails.",
-        "hero_sub": "Create a meeting link, collect availability, find overlapping time slots, confirm a slot and generate a professional follow-up email.",
-
         "create": "Create Meeting",
-        "add": "Add Availability",
-        "view": "View Matches",
-        "ai": "AI Email Assistant",
-        "chat": "AI Meeting Chatbot",
+        "availability": "Add Availability",
+        "confirm": "Confirm & Calendar",
+        "chatbot": "AI Chatbot",
 
-        "create_header": "Create Meeting",
-        "create_help": "Create a meeting title. MeetAlign will automatically generate a unique Meeting Code and shareable link.",
-        "add_header": "Add Availability",
-        "add_help": "Open a meeting link or enter the Meeting Code manually. Then add your name, email and availability.",
-        "view_header": "View & Confirm Matching Slots",
-        "view_help": "Review all submitted availability, find overlapping time slots, confirm one slot and download a calendar invite.",
-        "ai_header": "AI Email Assistant",
-        "ai_help": "Generate a professional email based on matching time slots.",
-        "chat_header": "AI Meeting Chatbot",
-        "chat_help": "Write a natural instruction such as: Plan a meeting with Moshira on 2026-05-12 at 14:00 for EIC Pathfinder.",
+        "title": "MeetAlign",
+        "subtitle": "Smart meeting scheduler for project teams, researchers and consortium partners.",
+        "hero": "Create a link, collect availability, confirm a slot and send a calendar invite.",
 
         "meeting_title": "Meeting Title",
         "meeting_placeholder": "EIC Pathfinder Collaboration Meeting",
         "create_button": "Create Meeting Link",
-        "created_success": "Meeting link created successfully.",
         "meeting_code": "Meeting Code",
-        "meeting_link": "Shareable Meeting Link",
-        "copy_message": "Copy this invitation message:",
-        "fill_title": "Please enter a meeting title.",
+        "meeting_link": "Meeting Link",
+        "copy_invitation": "Copy invitation message",
+        "created": "Meeting created successfully.",
 
-        "your_name": "Your Name",
-        "your_email": "Your Email",
+        "name": "Your Name",
+        "email": "Your Email",
         "role": "Role",
         "organizer": "Organizer",
         "participant": "Participant",
-        "date": "Available Date",
+        "date": "Date",
         "start": "Start Time",
         "end": "End Time",
         "save": "Save Availability",
-        "saved": "Availability saved successfully.",
-        "name_warning": "Please enter your name.",
-        "code_warning": "Please enter a Meeting Code.",
-        "time_warning": "End time must be later than start time.",
-        "meeting_not_found": "Meeting not found. Please check the Meeting Code.",
+        "saved": "Availability saved.",
+        "not_found": "Meeting not found.",
+        "enter_code": "Please enter Meeting Code.",
+        "enter_name": "Please enter your name.",
+        "time_error": "End time must be later than start time.",
 
         "all_availability": "All Availability",
-        "matching_slots": "Matching Time Slots",
-        "matches_found": "Matching slots found.",
-        "no_matches": "No matching time slots found yet.",
-        "no_data": "No availability has been added for this meeting yet.",
-        "total_entries": "Availability Entries",
-        "total_matches": "Matching Slots",
-        "participants": "People",
+        "matches": "Matching Slots",
+        "no_data": "No availability has been added yet.",
+        "no_match": "No matching slot found yet.",
+        "select_slot": "Select slot to confirm",
+        "confirm_meeting": "Confirm Meeting",
+        "confirmed": "Meeting confirmed.",
+        "download_ics": "Download .ics Calendar Invite",
 
-        "confirm": "Confirm Meeting",
-        "select_slot": "Select a slot to confirm",
-        "confirmed_slot": "Confirmed Slot",
-        "download_ics": "Download Calendar Invite (.ics)",
+        "google_meet": "Google Meet",
+        "google_coming": "Coming Soon — Connect Google Calendar to generate Google Meet links automatically.",
 
-        "generate_email": "Generate Professional Email",
-        "generated_email": "Generated Email",
-        "email_body": "Email Body",
+        "send_email": "Send Confirmation Email",
+        "recipient_email": "Recipient Email",
+        "email_sent": "Confirmation email sent.",
+        "email_failed": "Email could not be sent.",
 
+        "chat_help": "Example: Plan a meeting with Moshira on 2026-05-12 at 14:00 for EIC Pathfinder.",
         "chat_input": "Write your meeting request",
         "chat_button": "Create Meeting from Chat",
-        "chat_created": "Meeting created from your message.",
-        "parsed_info": "AI Parsed Information",
-
-        "col_name": "Name",
-        "col_email": "Email",
-        "col_role": "Role",
-        "col_date": "Date",
-        "col_start": "Start Time",
-        "col_end": "End Time",
-        "col_from": "Available From",
-        "col_until": "Available Until",
+        "parsed": "AI understood this:",
     },
-
     "Türkçe": {
         "menu": "Çalışma Alanı",
-        "title": "MeetAlign",
-        "caption": "Proje ekipleri, araştırmacılar ve konsorsiyum ortakları için akıllı toplantı planlama platformu.",
-        "hero": "Bitmeyen e-posta trafiği olmadan toplantı zamanı belirleyin.",
-        "hero_sub": "Toplantı linki oluşturun, uygunlukları toplayın, ortak saatleri bulun, toplantıyı onaylayın ve profesyonel e-posta üretin.",
-
         "create": "Toplantı Oluştur",
-        "add": "Uygunluk Ekle",
-        "view": "Eşleşmeleri Gör",
-        "ai": "AI E-posta Asistanı",
-        "chat": "AI Toplantı Chatbotu",
+        "availability": "Uygunluk Ekle",
+        "confirm": "Onayla & Takvim",
+        "chatbot": "AI Chatbot",
 
-        "create_header": "Toplantı Oluştur",
-        "create_help": "Toplantı başlığını girin. MeetAlign otomatik olarak benzersiz Meeting Code ve paylaşılabilir link oluşturur.",
-        "add_header": "Uygunluk Ekle",
-        "add_help": "Toplantı linkini açın veya Meeting Code’u manuel girin. Ardından adınızı, e-postanızı ve uygunluk bilgilerinizi ekleyin.",
-        "view_header": "Ortak Saatleri Gör ve Onayla",
-        "view_help": "Girilen tüm uygunlukları görün, ortak saatleri bulun, bir saati onaylayın ve takvim davetini indirin.",
-        "ai_header": "AI E-posta Asistanı",
-        "ai_help": "Ortak uygun saatlere göre profesyonel e-posta oluşturun.",
-        "chat_header": "AI Toplantı Chatbotu",
-        "chat_help": "Doğal bir komut yazın. Örnek: 12 Mayıs 2026 saat 14:00'te Moshira ile EIC Pathfinder toplantısı planla.",
+        "title": "MeetAlign",
+        "subtitle": "Proje ekipleri, araştırmacılar ve konsorsiyum ortakları için akıllı toplantı planlayıcı.",
+        "hero": "Link oluşturun, uygunlukları toplayın, ortak saati onaylayın ve takvim daveti gönderin.",
 
         "meeting_title": "Toplantı Başlığı",
         "meeting_placeholder": "EIC Pathfinder İş Birliği Toplantısı",
         "create_button": "Toplantı Linki Oluştur",
-        "created_success": "Toplantı linki başarıyla oluşturuldu.",
         "meeting_code": "Meeting Code",
-        "meeting_link": "Paylaşılabilir Toplantı Linki",
-        "copy_message": "Bu davet mesajını kopyalayın:",
-        "fill_title": "Lütfen toplantı başlığı girin.",
+        "meeting_link": "Toplantı Linki",
+        "copy_invitation": "Davet mesajını kopyala",
+        "created": "Toplantı başarıyla oluşturuldu.",
 
-        "your_name": "Adınız",
-        "your_email": "E-posta Adresiniz",
+        "name": "Adınız",
+        "email": "E-posta Adresiniz",
         "role": "Rol",
         "organizer": "Organizatör",
         "participant": "Katılımcı",
-        "date": "Uygun Tarih",
+        "date": "Tarih",
         "start": "Başlangıç Saati",
         "end": "Bitiş Saati",
         "save": "Uygunluk Kaydet",
-        "saved": "Uygunluk başarıyla kaydedildi.",
-        "name_warning": "Lütfen adınızı girin.",
-        "code_warning": "Lütfen Meeting Code girin.",
-        "time_warning": "Bitiş saati başlangıç saatinden sonra olmalıdır.",
-        "meeting_not_found": "Toplantı bulunamadı. Lütfen Meeting Code’u kontrol edin.",
+        "saved": "Uygunluk kaydedildi.",
+        "not_found": "Toplantı bulunamadı.",
+        "enter_code": "Lütfen Meeting Code girin.",
+        "enter_name": "Lütfen adınızı girin.",
+        "time_error": "Bitiş saati başlangıç saatinden sonra olmalıdır.",
 
         "all_availability": "Tüm Uygunluklar",
-        "matching_slots": "Ortak Uygun Saatler",
-        "matches_found": "Ortak uygun saat bulundu.",
-        "no_matches": "Henüz ortak uygun saat bulunamadı.",
-        "no_data": "Bu toplantı için henüz uygunluk eklenmemiş.",
-        "total_entries": "Uygunluk Kaydı",
-        "total_matches": "Ortak Saat",
-        "participants": "Kişi",
-
-        "confirm": "Toplantıyı Onayla",
+        "matches": "Ortak Uygun Saatler",
+        "no_data": "Henüz uygunluk eklenmemiş.",
+        "no_match": "Henüz ortak saat bulunamadı.",
         "select_slot": "Onaylanacak saati seçin",
-        "confirmed_slot": "Onaylanan Saat",
-        "download_ics": "Takvim Daveti İndir (.ics)",
+        "confirm_meeting": "Toplantıyı Onayla",
+        "confirmed": "Toplantı onaylandı.",
+        "download_ics": ".ics Takvim Daveti İndir",
 
-        "generate_email": "Profesyonel E-posta Oluştur",
-        "generated_email": "Oluşturulan E-posta",
-        "email_body": "E-posta Metni",
+        "google_meet": "Google Meet",
+        "google_coming": "Yakında — Google Calendar bağlandığında Google Meet linki otomatik üretilecek.",
 
+        "send_email": "Onay E-postası Gönder",
+        "recipient_email": "Alıcı E-posta",
+        "email_sent": "Onay e-postası gönderildi.",
+        "email_failed": "E-posta gönderilemedi.",
+
+        "chat_help": "Örnek: 12 Mayıs 2026 saat 14:00'te Moshira ile EIC Pathfinder toplantısı planla.",
         "chat_input": "Toplantı isteğinizi yazın",
         "chat_button": "Chatbot ile Toplantı Oluştur",
-        "chat_created": "Mesajınızdan toplantı oluşturuldu.",
-        "parsed_info": "AI Tarafından Anlaşılan Bilgi",
-
-        "col_name": "Ad",
-        "col_email": "E-posta",
-        "col_role": "Rol",
-        "col_date": "Tarih",
-        "col_start": "Başlangıç Saati",
-        "col_end": "Bitiş Saati",
-        "col_from": "Uygun Başlangıç",
-        "col_until": "Uygun Bitiş",
+        "parsed": "AI bunu anladı:",
     }
 }
 
 
 # -----------------------------
-# Helpers
+# HELPERS
 # -----------------------------
 def get_base_url():
     try:
@@ -333,53 +246,29 @@ def get_base_url():
         return "https://your-app-url.streamlit.app"
 
 
-def get_query_meeting_code():
+def get_query_code():
     try:
         return st.query_params.get("meeting", "")
     except Exception:
         return ""
 
 
-def set_meeting_query(meeting_code):
-    st.query_params["meeting"] = meeting_code
+def card_start():
+    st.markdown('<div class="card">', unsafe_allow_html=True)
 
 
-def section_open():
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
-
-def section_close():
+def card_end():
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def guide_card(title, text):
+def guide(text):
+    st.markdown(f'<div class="guide">{text}</div>', unsafe_allow_html=True)
+
+
+def empty(message):
     st.markdown(
         f"""
-        <div class="guide-card">
-            <strong>{title}</strong><br>
-            <span class="small-muted">{text}</span>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-def metric_card(number, label):
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-number">{number}</div>
-            <div class="metric-label">{label}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-def empty_state(message):
-    st.markdown(
-        f"""
-        <div class="empty-state">
+        <div class="empty">
             <h3>📭</h3>
             <p>{message}</p>
         </div>
@@ -388,7 +277,7 @@ def empty_state(message):
     )
 
 
-def get_availability_dataframe(meeting_code, t):
+def get_df(meeting_code):
     rows = get_availability(meeting_code)
 
     if not rows:
@@ -396,48 +285,36 @@ def get_availability_dataframe(meeting_code, t):
 
     return pd.DataFrame(
         rows,
-        columns=[
-            t["col_name"],
-            t["col_email"],
-            t["col_role"],
-            t["col_date"],
-            t["col_start"],
-            t["col_end"]
-        ]
+        columns=["Name", "Email", "Role", "Date", "Start Time", "End Time"]
     )
 
 
-def calculate_matches(df, t):
-    organizer_df = df[df[t["col_role"]] == t["organizer"]]
-    participant_df = df[df[t["col_role"]] == t["participant"]]
+def calculate_matches(df, organizer_label, participant_label):
+    organizers = df[df["Role"] == organizer_label]
+    participants = df[df["Role"] == participant_label]
 
     matches = []
 
-    for _, organizer in organizer_df.iterrows():
-        for _, participant in participant_df.iterrows():
-            if organizer[t["col_date"]] == participant[t["col_date"]]:
-                latest_start = max(
-                    organizer[t["col_start"]],
-                    participant[t["col_start"]]
-                )
-                earliest_end = min(
-                    organizer[t["col_end"]],
-                    participant[t["col_end"]]
-                )
+    for _, org in organizers.iterrows():
+        for _, part in participants.iterrows():
+            if org["Date"] == part["Date"]:
+                start = max(org["Start Time"], part["Start Time"])
+                end = min(org["End Time"], part["End Time"])
 
-                if latest_start < earliest_end:
+                if start < end:
                     matches.append({
-                        t["col_date"]: organizer[t["col_date"]],
-                        t["col_from"]: latest_start,
-                        t["col_until"]: earliest_end,
-                        t["organizer"]: organizer[t["col_name"]],
-                        t["participant"]: participant[t["col_name"]]
+                        "Date": org["Date"],
+                        "Start": start,
+                        "End": end,
+                        "Organizer": org["Name"],
+                        "Participant": part["Name"],
+                        "Participant Email": part["Email"]
                     })
 
     return matches
 
 
-def create_ics_content(title, start_date, start_time, end_time, description=""):
+def create_ics(title, date, start_time, end_time, description=""):
     start_time = str(start_time)
     end_time = str(end_time)
 
@@ -447,15 +324,8 @@ def create_ics_content(title, start_date, start_time, end_time, description=""):
     if len(end_time) == 5:
         end_time += ":00"
 
-    start_dt = datetime.strptime(
-        f"{start_date} {start_time}",
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-    end_dt = datetime.strptime(
-        f"{start_date} {end_time}",
-        "%Y-%m-%d %H:%M:%S"
-    )
+    start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M:%S")
+    end_dt = datetime.strptime(f"{date} {end_time}", "%Y-%m-%d %H:%M:%S")
 
     dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     dtstart = start_dt.strftime("%Y%m%dT%H%M%S")
@@ -463,7 +333,7 @@ def create_ics_content(title, start_date, start_time, end_time, description=""):
 
     return f"""BEGIN:VCALENDAR
 VERSION:2.0
-PRODID:-//MeetAlign//Meeting Scheduler//EN
+PRODID:-//MeetAlign//EN
 BEGIN:VEVENT
 UID:{dtstamp}@meetalign
 DTSTAMP:{dtstamp}
@@ -476,8 +346,44 @@ END:VCALENDAR
 """
 
 
+def send_resend_email(to_email, subject, body):
+    api_key = st.secrets.get("RESEND_API_KEY", None)
+    sender_email = st.secrets.get("SENDER_EMAIL", None)
+
+    if not api_key or not sender_email:
+        return False, "RESEND_API_KEY or SENDER_EMAIL is missing in Streamlit Secrets."
+
+    payload = {
+        "from": sender_email,
+        "to": [to_email],
+        "subject": subject,
+        "html": body.replace("\n", "<br>")
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+
+        if response.status_code in [200, 201, 202]:
+            return True, response.text
+
+        return False, response.text
+
+    except Exception as e:
+        return False, str(e)
+
+
 # -----------------------------
-# Sidebar
+# SIDEBAR
 # -----------------------------
 language = st.sidebar.selectbox(
     "Platform Language / Platform Dili",
@@ -485,33 +391,29 @@ language = st.sidebar.selectbox(
 )
 
 t = TEXT[language]
-query_meeting_code = get_query_meeting_code()
+query_code = get_query_code()
 
 st.sidebar.markdown("### 📅 MeetAlign")
-st.sidebar.caption("Meeting coordination workspace")
-
-default_menu_index = 1 if query_meeting_code else 0
 
 menu = st.sidebar.radio(
     t["menu"],
-    [t["create"], t["add"], t["view"], t["ai"], t["chat"]],
-    index=default_menu_index
+    [t["create"], t["availability"], t["confirm"], t["chatbot"]],
+    index=1 if query_code else 0
 )
 
 
 # -----------------------------
-# Hero
+# HERO
 # -----------------------------
 st.markdown(
     f"""
-    <div class="hero-card">
-        <span class="pill">Scheduling</span>
-        <span class="pill">AI Assistant</span>
+    <div class="hero">
+        <span class="pill">Availability</span>
         <span class="pill">Calendar Invite</span>
-        <div class="main-title">📅 {t["title"]}</div>
-        <div class="subtitle">{t["caption"]}</div>
+        <span class="pill">AI Chatbot</span>
+        <div class="hero-title">📅 {t["title"]}</div>
+        <div class="hero-sub">{t["subtitle"]}</div>
         <h3>{t["hero"]}</h3>
-        <p class="small-muted">{t["hero_sub"]}</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -519,13 +421,14 @@ st.markdown(
 
 
 # -----------------------------
-# Create Meeting
+# CREATE MEETING
 # -----------------------------
 if menu == t["create"]:
-    st.header(t["create_header"])
-    guide_card("Step 1 / Adım 1", t["create_help"])
+    st.header(t["create"])
 
-    section_open()
+    guide("1. Enter a meeting title. 2. Create a link. 3. Share it with the other person.")
+
+    card_start()
 
     meeting_title = st.text_input(
         t["meeting_title"],
@@ -534,12 +437,12 @@ if menu == t["create"]:
 
     if st.button(t["create_button"], use_container_width=True):
         if not meeting_title:
-            st.warning(t["fill_title"])
+            st.warning(t["meeting_title"])
         else:
             meeting_code = create_meeting(meeting_title)
             meeting_link = f"{get_base_url()}?meeting={meeting_code}"
 
-            st.success(t["created_success"])
+            st.success(t["created"])
 
             c1, c2 = st.columns([1, 2])
 
@@ -549,7 +452,7 @@ if menu == t["create"]:
             with c2:
                 st.text_input(t["meeting_link"], value=meeting_link)
 
-            st.write(t["copy_message"])
+            st.subheader(t["copy_invitation"])
             st.code(
                 f"""Hello,
 
@@ -565,258 +468,214 @@ Meeting Code: {meeting_code}
 Best regards"""
             )
 
-            set_meeting_query(meeting_code)
-
-    section_close()
+    card_end()
 
 
 # -----------------------------
-# Add Availability
+# ADD AVAILABILITY
 # -----------------------------
-elif menu == t["add"]:
-    st.header(t["add_header"])
-    guide_card("Step 2 / Adım 2", t["add_help"])
+elif menu == t["availability"]:
+    st.header(t["availability"])
 
-    section_open()
+    guide("1. Open the meeting link or enter Meeting Code. 2. Add your availability. 3. Save.")
 
-    default_code = query_meeting_code if query_meeting_code else ""
+    card_start()
 
     meeting_code = st.text_input(
         t["meeting_code"],
-        value=default_code,
+        value=query_code,
         placeholder="AB12CD34"
     ).strip().upper()
 
     meeting = get_meeting(meeting_code) if meeting_code else None
 
-    if meeting_code and meeting:
+    if meeting:
         st.success(meeting[1])
-
-    elif meeting_code and not meeting:
-        st.warning(t["meeting_not_found"])
+    elif meeting_code:
+        st.warning(t["not_found"])
 
     c1, c2 = st.columns(2)
 
     with c1:
-        name = st.text_input(t["your_name"])
-        email = st.text_input(t["your_email"])
+        name = st.text_input(t["name"])
+        email = st.text_input(t["email"])
 
     with c2:
-        role_label = st.selectbox(t["role"], [t["organizer"], t["participant"]])
+        role = st.selectbox(t["role"], [t["organizer"], t["participant"]])
         date = st.date_input(t["date"])
 
-        tc1, tc2 = st.columns(2)
-
-        with tc1:
+        sc1, sc2 = st.columns(2)
+        with sc1:
             start_time = st.time_input(t["start"])
-
-        with tc2:
+        with sc2:
             end_time = st.time_input(t["end"])
 
     if st.button(t["save"], use_container_width=True):
         if not meeting_code:
-            st.warning(t["code_warning"])
+            st.warning(t["enter_code"])
         elif not get_meeting(meeting_code):
-            st.warning(t["meeting_not_found"])
+            st.warning(t["not_found"])
         elif not name:
-            st.warning(t["name_warning"])
+            st.warning(t["enter_name"])
         elif start_time >= end_time:
-            st.warning(t["time_warning"])
+            st.warning(t["time_error"])
         else:
             add_availability(
                 meeting_code,
                 name,
                 email,
-                role_label,
+                role,
                 date,
                 start_time,
                 end_time
             )
             st.success(t["saved"])
 
-    section_close()
+    card_end()
 
 
 # -----------------------------
-# View Matches + Confirm + ICS
+# CONFIRM + ICS + EMAIL
 # -----------------------------
-elif menu == t["view"]:
-    st.header(t["view_header"])
-    guide_card("Step 3 / Adım 3", t["view_help"])
+elif menu == t["confirm"]:
+    st.header(t["confirm"])
 
-    default_code = query_meeting_code if query_meeting_code else ""
+    guide("1. Enter Meeting Code. 2. Select a matching slot. 3. Download .ics or send confirmation email.")
+
+    card_start()
 
     meeting_code = st.text_input(
         t["meeting_code"],
-        value=default_code,
-        key="view_meeting_code"
-    ).strip().upper()
-
-    if not meeting_code:
-        empty_state(t["code_warning"])
-    else:
-        meeting = get_meeting(meeting_code)
-
-        if not meeting:
-            st.warning(t["meeting_not_found"])
-        else:
-            st.success(meeting[1])
-
-        df = get_availability_dataframe(meeting_code, t)
-
-        if df.empty:
-            empty_state(t["no_data"])
-        else:
-            matches = calculate_matches(df, t)
-
-            m1, m2, m3 = st.columns(3)
-
-            with m1:
-                metric_card(len(df), t["total_entries"])
-
-            with m2:
-                metric_card(len(matches), t["total_matches"])
-
-            with m3:
-                metric_card(df[t["col_email"]].nunique(), t["participants"])
-
-            section_open()
-            st.subheader(t["all_availability"])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            section_close()
-
-            section_open()
-            st.subheader(t["matching_slots"])
-
-            if not matches:
-                st.warning(t["no_matches"])
-            else:
-                st.success(t["matches_found"])
-                match_df = pd.DataFrame(matches)
-                st.dataframe(match_df, use_container_width=True, hide_index=True)
-
-                selected_index = st.selectbox(
-                    t["select_slot"],
-                    range(len(matches)),
-                    format_func=lambda i: (
-                        f"{matches[i][t['col_date']]} | "
-                        f"{matches[i][t['col_from']]} - "
-                        f"{matches[i][t['col_until']]}"
-                    )
-                )
-
-                selected_match = matches[selected_index]
-
-                if st.button(t["confirm"], use_container_width=True):
-                    title = meeting[1] if meeting else "MeetAlign Meeting"
-
-                    ics_content = create_ics_content(
-                        title,
-                        selected_match[t["col_date"]],
-                        selected_match[t["col_from"]],
-                        selected_match[t["col_until"]],
-                        description=f"Meeting confirmed via MeetAlign. Meeting Code: {meeting_code}"
-                    )
-
-                    st.success(
-                        f"{t['confirmed_slot']}: "
-                        f"{selected_match[t['col_date']]} "
-                        f"{selected_match[t['col_from']]} - "
-                        f"{selected_match[t['col_until']]}"
-                    )
-
-                    st.download_button(
-                        label=t["download_ics"],
-                        data=ics_content,
-                        file_name=f"meetalign_{meeting_code}.ics",
-                        mime="text/calendar",
-                        use_container_width=True
-                    )
-
-            section_close()
-
-
-# -----------------------------
-# AI Email Assistant
-# -----------------------------
-elif menu == t["ai"]:
-    st.header(t["ai_header"])
-    guide_card("Step 4 / Adım 4", t["ai_help"])
-
-    section_open()
-
-    default_code = query_meeting_code if query_meeting_code else ""
-
-    meeting_code = st.text_input(
-        t["meeting_code"],
-        value=default_code,
-        key="ai_meeting_code"
+        value=query_code,
+        key="confirm_code"
     ).strip().upper()
 
     meeting = get_meeting(meeting_code) if meeting_code else None
 
-    meeting_title = st.text_input(
-        t["meeting_title"],
-        value=meeting[1] if meeting else t["meeting_placeholder"]
+    if not meeting_code:
+        st.info(t["enter_code"])
+        card_end()
+        st.stop()
+
+    if not meeting:
+        st.warning(t["not_found"])
+        card_end()
+        st.stop()
+
+    meeting_title = meeting[1]
+    st.success(meeting_title)
+
+    df = get_df(meeting_code)
+
+    if df.empty:
+        empty(t["no_data"])
+        card_end()
+        st.stop()
+
+    st.subheader(t["all_availability"])
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    matches = calculate_matches(df, t["organizer"], t["participant"])
+
+    st.subheader(t["matches"])
+
+    if not matches:
+        empty(t["no_match"])
+        card_end()
+        st.stop()
+
+    match_df = pd.DataFrame(matches)
+    st.dataframe(match_df, use_container_width=True, hide_index=True)
+
+    selected_index = st.selectbox(
+        t["select_slot"],
+        range(len(matches)),
+        format_func=lambda i: f"{matches[i]['Date']} | {matches[i]['Start']} - {matches[i]['End']}"
     )
 
-    section_close()
+    selected = matches[selected_index]
 
-    if not meeting_code:
-        empty_state(t["code_warning"])
-    else:
-        df = get_availability_dataframe(meeting_code, t)
+    st.markdown("### ✅ Selected Slot")
+    st.info(f"{selected['Date']} | {selected['Start']} - {selected['End']}")
 
-        if df.empty:
-            empty_state(t["no_data"])
+    st.markdown("### 🔗 Google Meet")
+    st.warning(t["google_coming"])
+
+    if st.button(t["confirm_meeting"], use_container_width=True):
+        ics_content = create_ics(
+            meeting_title,
+            selected["Date"],
+            selected["Start"],
+            selected["End"],
+            description=f"Meeting confirmed via MeetAlign. Meeting Code: {meeting_code}"
+        )
+
+        st.success(t["confirmed"])
+
+        st.download_button(
+            label=t["download_ics"],
+            data=ics_content,
+            file_name=f"meetalign_{meeting_code}.ics",
+            mime="text/calendar",
+            use_container_width=True
+        )
+
+    st.markdown("### ✉️ Email Confirmation")
+
+    recipient_email = st.text_input(
+        t["recipient_email"],
+        value=selected.get("Participant Email", "")
+    )
+
+    email_body = f"""Hello,
+
+The meeting has been confirmed.
+
+Meeting: {meeting_title}
+Date: {selected['Date']}
+Time: {selected['Start']} - {selected['End']}
+
+Google Meet:
+Coming Soon — Google Calendar connection will be available in a future version.
+
+Best regards,
+MeetAlign
+"""
+
+    st.text_area("Email Preview", value=email_body, height=180)
+
+    if st.button(t["send_email"], use_container_width=True):
+        if not recipient_email:
+            st.warning(t["recipient_email"])
         else:
-            matches = calculate_matches(df, t)
+            ok, message = send_resend_email(
+                recipient_email,
+                f"Confirmed Meeting: {meeting_title}",
+                email_body
+            )
 
-            if not matches:
-                empty_state(t["no_matches"])
+            if ok:
+                st.success(t["email_sent"])
             else:
-                section_open()
-                st.subheader(t["matching_slots"])
-                st.dataframe(pd.DataFrame(matches), use_container_width=True, hide_index=True)
+                st.error(f"{t['email_failed']} {message}")
 
-                if st.button(t["generate_email"], use_container_width=True):
-                    normalized_matches = []
-
-                    for item in matches:
-                        normalized_matches.append({
-                            "Date": item[t["col_date"]],
-                            "Available From": item[t["col_from"]],
-                            "Available Until": item[t["col_until"]],
-                        })
-
-                    email_text = generate_meeting_email(
-                        meeting_title,
-                        normalized_matches
-                    )
-
-                    st.subheader(t["generated_email"])
-                    st.text_area(
-                        t["email_body"],
-                        value=email_text,
-                        height=320
-                    )
-
-                section_close()
+    card_end()
 
 
 # -----------------------------
-# AI Meeting Chatbot
+# AI CHATBOT
 # -----------------------------
-elif menu == t["chat"]:
-    st.header(t["chat_header"])
-    guide_card("AI / Yapay Zeka", t["chat_help"])
+elif menu == t["chatbot"]:
+    st.header(t["chatbot"])
 
-    section_open()
+    guide(t["chat_help"])
+
+    card_start()
 
     user_message = st.text_area(
         t["chat_input"],
-        placeholder="Plan a meeting with Moshira on 2026-05-12 at 14:00 for EIC Pathfinder.",
-        height=150
+        height=150,
+        placeholder=t["chat_help"]
     )
 
     if st.button(t["chat_button"], use_container_width=True):
@@ -828,16 +687,26 @@ elif menu == t["chat"]:
             if error:
                 st.error(error)
             else:
+                st.subheader(t["parsed"])
+                st.json(parsed)
+
                 meeting_title = parsed.get("meeting_title") or "MeetAlign Meeting"
-                participant_name = parsed.get("participant_name", "")
                 date_value = parsed.get("date", "")
                 start_time = parsed.get("start_time", "")
                 end_time = parsed.get("end_time", "")
+                participant_name = parsed.get("participant_name", "")
+
+                if start_time and not end_time:
+                    try:
+                        temp = datetime.strptime(start_time, "%H:%M")
+                        end_time = (temp + timedelta(minutes=30)).strftime("%H:%M")
+                    except Exception:
+                        end_time = ""
 
                 meeting_code = create_meeting(meeting_title)
                 meeting_link = f"{get_base_url()}?meeting={meeting_code}"
 
-                st.success(t["chat_created"])
+                st.success(t["created"])
 
                 c1, c2 = st.columns([1, 2])
 
@@ -847,10 +716,20 @@ elif menu == t["chat"]:
                 with c2:
                     st.text_input(t["meeting_link"], value=meeting_link)
 
-                st.subheader(t["parsed_info"])
-                st.json(parsed)
+                if date_value and start_time and end_time:
+                    add_availability(
+                        meeting_code,
+                        "Organizer",
+                        "",
+                        t["organizer"],
+                        date_value,
+                        f"{start_time}:00" if len(start_time) == 5 else start_time,
+                        f"{end_time}:00" if len(end_time) == 5 else end_time
+                    )
 
-                st.write(t["copy_message"])
+                    st.info("Organizer availability was added automatically.")
+
+                st.subheader(t["copy_invitation"])
                 st.code(
                     f"""Hello {participant_name},
 
@@ -866,24 +745,4 @@ Meeting Code: {meeting_code}
 Best regards"""
                 )
 
-                if date_value and start_time and end_time:
-                    try:
-                        add_availability(
-                            meeting_code,
-                            "Organizer",
-                            "",
-                            t["organizer"],
-                            date_value,
-                            f"{start_time}:00" if len(start_time) == 5 else start_time,
-                            f"{end_time}:00" if len(end_time) == 5 else end_time
-                        )
-
-                        st.info("Organizer availability was added automatically.")
-                    except Exception as e:
-                        st.warning(
-                            f"Meeting was created, but availability could not be added: {e}"
-                        )
-
-                set_meeting_query(meeting_code)
-
-    section_close()
+    card_end()
